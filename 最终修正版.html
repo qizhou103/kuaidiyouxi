@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>快递达人挑战赛 - 最终修正版</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #f0f9ff;
+            font-family: 'Comic Sans MS', cursive;
+        }
+
+        #gameContainer {
+            position: relative;
+            padding: 20px;
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            max-width: 90%;
+        }
+
+        .difficulty-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .difficulty-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .difficulty-btn.active {
+            transform: scale(1.1);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        }
+
+        #easyBtn { background: #8bc34a; color: white; }
+        #mediumBtn { background: #ffc107; color: white; }
+        #hardBtn { background: #f44336; color: white; }
+
+        .grid {
+            display: grid;
+            gap: 8px;
+            margin: 20px;
+        }
+
+        .cell {
+            background: #e3f2fd;
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+            touch-action: manipulation;
+            position: relative;
+            aspect-ratio: 1;
+        }
+
+        .cell.start { background: #a5d6a7; }
+        .cell.path { background: #81d4fa !important; }
+        .cell.goal { background: #f8bbd0; }
+        .cell.current { transform: scale(1.1); box-shadow: 0 0 10px rgba(0,0,0,0.2); }
+        .cell.theoretical-path { background: #ffb6c1 !important; animation: pulse 1s; }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        #status {
+            text-align: center;
+            font-size: 24px;
+            color: #1976d2;
+            margin: 15px 0;
+            transition: color 0.3s;
+            min-height: 36px;
+        }
+
+        #restart {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            font-size: 18px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+        }
+
+        .result-icon {
+            font-size: 40px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation: pop 0.5s;
+        }
+
+        @keyframes pop {
+            0% { transform: translate(-50%, -50%) scale(0); }
+            90% { transform: translate(-50%, -50%) scale(1.2); }
+            100% { transform: translate(-50%, -50%) scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div class="difficulty-buttons">
+            <button class="difficulty-btn active" id="easyBtn">简单模式</button>
+            <button class="difficulty-btn" id="mediumBtn">中等模式</button>
+            <button class="difficulty-btn" id="hardBtn">困难模式</button>
+        </div>
+        <div id="status">点击开始送货吧！</div>
+        <div class="grid" id="grid"></div>
+        <button id="restart">重新开始</button>
+    </div>
+
+<script>
+const DIFFICULTY_SETTINGS = {
+    easy: { rows: 3, cols: 4, minGoals: 1, maxGoals: 2 },
+    medium: { rows: 4, cols: 5, minGoals: 2, maxGoals: 3 },
+    hard: { rows: 5, cols: 6, minGoals: 3, maxGoals: 4 }
+};
+
+let currentDifficulty = 'easy';
+let ROWS, COLS;
+let currentPath = [];
+let theoreticalShortestSteps = 0;
+let goals = [];
+
+function initializeGame() {
+    const config = DIFFICULTY_SETTINGS[currentDifficulty];
+    ROWS = config.rows;
+    COLS = config.cols;
+    
+    const grid = document.getElementById('grid');
+    grid.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+    grid.innerHTML = '';
+
+    const cellSize = Math.min(100, 420 / Math.max(ROWS, COLS));
+    for (let i = 0; i < ROWS * COLS; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.style.width = `${cellSize}px`;
+        cell.dataset.index = i;
+        if (i === 0) {
+            cell.classList.add('start');
+            cell.textContent = '🚚';
+        }
+        grid.appendChild(cell);
+    }
+
+    generateValidLevel();
+}
+
+function generateValidLevel() {
+    const grid = document.getElementById('grid');
+    const config = DIFFICULTY_SETTINGS[currentDifficulty];
+    
+    do {
+        goals = [];
+        const goalCount = Math.floor(Math.random() * (config.maxGoals - config.minGoals + 1)) + config.minGoals;
+        while (goals.length < goalCount) {
+            const randomIndex = Math.floor(Math.random() * (ROWS * COLS - 1)) + 1;
+            if (!goals.includes(randomIndex)) goals.push(randomIndex);
+        }
+        
+        const result = calculateShortestPath(0, goals);
+        theoreticalShortestSteps = result.steps;
+    } while(theoreticalShortestSteps === Infinity);
+
+    goals.forEach((goal, index) => {
+        grid.children[goal].classList.add('goal');
+        grid.children[goal].textContent = ['🌟', '❤️', '🎁', '🏆'][index];
+    });
+}
+
+function calculateShortestPath(start, goals) {
+    const queue = [{ pos: start, mask: 0, steps: 0, path: [start] }];
+    const visited = new Set([`${start},0`]);
+    const fullMask = (1 << goals.length) - 1;
+
+    while (queue.length > 0) {
+        const { pos, mask, steps, path } = queue.shift();
+        
+        if ((mask & fullMask) === fullMask) return { steps, path };
+        
+        getAdjacentCells(pos).forEach(nextPos => {
+            if (path.includes(nextPos)) return;
+            
+            let newMask = mask;
+            const goalIndex = goals.indexOf(nextPos);
+            if (goalIndex !== -1) newMask |= 1 << goalIndex;
+            
+            const stateKey = `${nextPos},${newMask}`;
+            if (!visited.has(stateKey)) {
+                visited.add(stateKey);
+                queue.push({
+                    pos: nextPos,
+                    mask: newMask,
+                    steps: steps + 1,
+                    path: [...path, nextPos]
+                });
+            }
+        });
+    }
+    return { steps: Infinity, path: [] };
+}
+
+function getAdjacentCells(index) {
+    const col = index % COLS;
+    const row = Math.floor(index / COLS);
+    return [
+        row > 0 ? index - COLS : null,
+        row < ROWS - 1 ? index + COLS : null,
+        col > 0 ? index - 1 : null,
+        col < COLS - 1 ? index + 1 : null
+    ].filter(cell => cell !== null);
+}
+
+function handleCellClick(e) {
+    const cell = e.target;
+    if (!cell.classList.contains('cell')) return;
+    
+    const index = parseInt(cell.dataset.index);
+    const lastIndex = currentPath[currentPath.length - 1] || 0;
+    
+    if (currentPath.includes(index) || !getAdjacentCells(lastIndex).includes(index)) return;
+    
+    currentPath.push(index);
+    cell.classList.add('path');
+    document.querySelectorAll('.cell').forEach(c => c.classList.remove('current'));
+    cell.classList.add('current');
+
+    const collectedGoals = new Set(currentPath.filter(i => goals.includes(i)));
+    if (collectedGoals.size === goals.length) finishGame();
+}
+
+function finishGame() {
+    const playerSteps = currentPath.length - 1;
+    const isOptimal = playerSteps <= theoreticalShortestSteps;
+    
+    if (isOptimal) {
+        document.getElementById('status').innerHTML = '🎉 胜利！达成最优路径！';
+        document.getElementById('status').style.color = '#4CAF50';
+        showResultIcon(true);
+    } else {
+        document.getElementById('status').innerHTML = '💪 再加油！继续努力！';
+        document.getElementById('status').style.color = '#F44336';
+        showTheoreticalPath();
+    }
+
+    grid.removeEventListener('click', handleCellClick);
+}
+
+function showTheoreticalPath() {
+    const result = calculateShortestPath(0, goals);
+    result.path.forEach((pos, i) => {
+        setTimeout(() => {
+            const cell = document.querySelector(`[data-index="${pos}"]`);
+            cell.classList.add('theoretical-path');
+            if (i === result.path.length - 1) {
+                const icon = document.createElement('div');
+                icon.className = 'result-icon';
+                icon.textContent = '💔';
+                cell.appendChild(icon);
+            }
+        }, i * 200);
+    });
+}
+
+function showResultIcon() {
+    const lastCell = document.querySelector(`[data-index="${currentPath[currentPath.length-1]}"]`);
+    const icon = document.createElement('div');
+    icon.className = 'result-icon';
+    icon.textContent = '🎊';
+    lastCell.appendChild(icon);
+}
+
+document.getElementById('restart').addEventListener('click', resetGame);
+
+document.querySelectorAll('.difficulty-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentDifficulty = this.id.replace('Btn', '');
+        resetGame();
+    });
+});
+
+function resetGame() {
+    currentPath = [];
+    document.querySelectorAll('.cell').forEach(c => {
+        c.classList.remove('path', 'current', 'theoretical-path');
+        const icon = c.querySelector('.result-icon');
+        if (icon) icon.remove();
+    });
+    initializeGame();
+    document.getElementById('status').textContent = '点击开始送货吧！';
+    document.getElementById('status').style.color = '#1976d2';
+    grid.addEventListener('click', handleCellClick);
+}
+
+// 初始化游戏
+const grid = document.getElementById('grid');
+initializeGame();
+grid.addEventListener('click', handleCellClick);
+grid.addEventListener('touchstart', handleCellClick);
+</script>
+</body>
+</html>
